@@ -1,10 +1,10 @@
-import { AExpr } from './alloy/ast';
-import { aAccess, aAnd, aBinop, aIdent, aIntLit, aOr, aPredCall, aPrime, deepPrime, visit } from './alloy/ast-builder';
+import { AExpr, AIdentifier } from './alloy/ast';
+import { aAccess, aAnd, aBinop, aIdent, aIntLit, aOr, aPredCall, aPrime, aUpdateT, visit } from './alloy/ast-builder';
 import { FExpr, FStatement } from './flat/ast';
 import { FlatProgram } from './flat/flatprogram';
 import deepEqual from 'deep-equal';
 
-export function flatToAlloy(pcVar: AExpr, p: FlatProgram, stateVar: AExpr, vars: AExpr[]) {
+export function flatToAlloy(pcVar: AIdentifier, p: FlatProgram, selfVar: AIdentifier, vars: AIdentifier[]) {
   const transitions: AExpr[] = [];
   const chunks = Object.entries(p.chunks);
 
@@ -12,16 +12,19 @@ export function flatToAlloy(pcVar: AExpr, p: FlatProgram, stateVar: AExpr, vars:
     const [label, chunk] = chunks[i];
     const sequentialLabel = chunks[i + 1]?.[0] ?? 'end';
 
-    const translation = translateFlat(chunk);
+    const translation = translateFlat(chunk, selfVar);
 
     const nextLabel = translation.nextLabel ?? sequentialLabel;
-    const exprs = (translation.exprs ?? []).map(e => accessIdentifiersOn(e, stateVar));
 
     transitions.push(aAnd([
-      aBinop('=', pcVar, aIdent(label)),
-      ...exprs,
-      ...frame(vars, exprs),
-      aBinop('=', aPrime(pcVar), aIdent(nextLabel)),
+      // Precondition
+      aBinop('=', aAccess(selfVar, pcVar.id), aIdent(label)),
+
+      // Effects
+      ...translation.exprs ?? [],
+      aUpdateT(pcVar, selfVar, aIdent(nextLabel)),
+      // Unchanged variables
+      ...frame(vars, translation.exprs ?? []),
     ]));
   }
 
@@ -37,7 +40,7 @@ export function flatToAlloy(pcVar: AExpr, p: FlatProgram, stateVar: AExpr, vars:
 /**
  * Return frame conditions for all variables that are unused in 'exprs'
  */
-function frame(vars: AExpr[], exprs: AExpr[]) {
+export function frame(vars: AIdentifier[], exprs: AExpr[]) {
   const unused = [...vars];
 
   for (const expr of exprs) {
@@ -54,7 +57,7 @@ function frame(vars: AExpr[], exprs: AExpr[]) {
   return unused.map(v => aBinop('=', aPrime(v), v));
 }
 
-function translateFlat(st: FStatement[]): Translation {
+function translateFlat(st: FStatement[], selfVar: AIdentifier): Translation {
   if (st.length !== 1) {
     throw new Error('Currently do not support clauses with multiple statements');
   }
@@ -64,11 +67,9 @@ function translateFlat(st: FStatement[]): Translation {
   switch (fst.type) {
     case 'assign': {
       return {
-        exprs: [{
-          type: '=',
-          lhs: aPrime(translateExpr(fst.lhs)),
-          rhs: translateExpr(fst.rhs),
-        }],
+        exprs: [
+          aUpdateT(translateExpr(fst.lhs), selfVar, accessIdentifiersOn(translateExpr(fst.rhs), selfVar)),
+        ],
       };
     }
 

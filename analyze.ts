@@ -1,12 +1,10 @@
 import ts from 'typescript';
-import { DiagnosticCategory, FunctionDeclaration, Project, Node, VariableDeclaration, SyntaxKind, Statement, Expression } from "ts-morph";
+import { DiagnosticCategory, Project } from "ts-morph";
 import { FunctionTranslation, translateFunction } from './translate-function';
-import { inspect } from 'util';
 import { renderModel } from './alloy/render';
 import { Code } from './code';
 import { aMergeModel, aModel } from './alloy/ast-builder';
-import { APred } from './alloy/ast';
-import { combineInitsAndSteps as combineFunctions } from './alloy/combine-pred';
+import { combineFunctions } from './alloy/combine-pred';
 
 async function main() {
   const args = process.argv.slice(2);

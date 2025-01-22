@@ -1,6 +1,6 @@
 import { Code } from '../code';
 import { assertNever } from '../util';
-import { AClause, AExpr, AlloyModel, APred, ASig } from './ast';
+import { AExpr, AlloyModel, APred, ASig } from './ast';
 
 export function renderModel(x: AlloyModel, code: Code) {
   code.separate(() => '\n\n', Object.values(x.sigs), (s) => renderSig(s, code));
@@ -42,24 +42,10 @@ export function emitPred(x: APred, code: Code) {
   code.beginBlock();
 
   code.separate(() => code.linebreak, x.clauses, (c) => {
-    emitClause(c, code);
+    emitExpr(c, code);
   });
 
   code.endBlock();
-}
-
-export function emitClause(x: AClause, code: Code): void {
-  switch (x.type) {
-    case 'qual':
-      code.emit(`${x.qual} ${x.var}: ${x.set} | `);
-      emitExpr(x.pred, code);
-      break;
-
-    default:
-      // It's an expr
-      emitExpr(x, code);
-      break;
-  }
 }
 
 export function emitExpr(x: AExpr, code: Code): void {
@@ -110,9 +96,21 @@ export function emitExpr(x: AExpr, code: Code): void {
     case '=':
     case 'in':
     case '=>':
+    case '++':
+    case '->':
       recurse(x.lhs);
       code.emit(` ${x.type} `);
       recurse(x.rhs);
+      break;
+
+    case 'qual':
+      code.emit(`${x.qual} ${x.var}: ${x.set} | `);
+      emitExpr(x.pred, code);
+      break;
+
+    case 'time':
+      code.emit(`${x.qual} `);
+      emitExpr(x.pred, code);
       break;
 
     default:

@@ -43,41 +43,27 @@ export function translateFunction(fn: FunctionDeclaration): FunctionTranslation 
   };
 
   const stateVar = aIdent(stateVarName);
-  const pcVar = aAccess(stateVar, 'pc');
+  const pcVarName = 'pc';
 
-  const stutterPred: APred = {
-    type: 'pred',
-    name: `${fn.getName()}_stutter`,
-    parameters: [ [stateVarName, stateSig.name] ],
-    clauses: [],
-  };
-
-  const instanceVars: AExpr[] = [];
   const variables = findVariables(fn);
-  for (const v of variables) {
-    const varName = v.name;
 
-    stateSig.fields[varName] = {
-      name: varName,
-      type: v.type,
-      var: true,
-    };
-
-    const instVar = aAccess(stateVar, varName);
-    initPred.clauses.push(aBinop('=', instVar, v.initialValue));
-    instanceVars.push(instVar);
-  }
+  Object.assign(stateSig.fields, Object.fromEntries(variables.map(v => [v.name, {
+    name: v.name,
+    type: v.type,
+    var: true,
+  }])));
+  const vars = variables.map(v => aIdent(v.name));
+  initPred.clauses.push(...variables.map(v => aBinop('=', aAccess(stateVar, v.name), v.initialValue)));
 
   const flat = statementsToFlat(fn.getStatements());
-  const alloy = flatToAlloy(pcVar, flat, stateVar, instanceVars);
-
-  initPred.clauses.push(aBinop('=', pcVar, aIdent(flat.start)));
+  const stepDisjunction = flatToAlloy(aIdent(pcVarName), flat, stateVar, vars);
+  initPred.clauses.push(aBinop('=', aAccess(stateVar, pcVarName), aIdent(flat.start)));
 
   const stepPred: APred = {
     type: 'pred',
     name: `${fn.getName()}_step`,
     parameters: [[stateVarName, stateSig.name]],
-    clauses: [alloy],
+    clauses: [stepDisjunction],
   };
 
   pcSig.variants.push(...fLabels(flat), 'end');
@@ -86,11 +72,11 @@ export function translateFunction(fn: FunctionDeclaration): FunctionTranslation 
     type: 'pred',
     name: `${fn.getName()}_atEnd`,
     parameters: [[stateVarName, stateSig.name]],
-    clauses: [aBinop('=', pcVar, aIdent('end'))],
+    clauses: [aBinop('=', aAccess(stateVar, pcVarName), aIdent('end'))],
   };
 
   return {
-    model: aModel([stateSig, pcSig], [initPred, stepPred]),
+    model: aModel([stateSig, pcSig], [initPred, stepPred, atEndPred]),
     initPred,
     stepPred,
     stateSig,

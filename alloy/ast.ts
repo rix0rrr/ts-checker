@@ -32,10 +32,8 @@ export interface APred {
   name: string;
   /** [name, type] */
   parameters?: Array<[string, string]>;
-  clauses: AClause[];
+  clauses: AExpr[];
 }
-
-export type AClause = AExpr | AUnivQual;
 
 export interface AUnivQual {
   type: 'qual';
@@ -45,10 +43,10 @@ export interface AUnivQual {
   pred: AExpr;
 }
 
-export type AExpr = ABinop | APropertyAccess | AIdentifier | APredCall | AOr | AAnd | AIntLit | APrime;
+export type AExpr = ABinop | APropertyAccess | AIdentifier | APredCall | AOr | AAnd | AIntLit | APrime | AUnivQual | ATimeQual;
 
 export interface ABinop {
-  type: '=' | 'in' | '=>';
+  type: '=' | 'in' | '=>' | '++' | '->';
   lhs: AExpr;
   rhs: AExpr;
 }
@@ -88,4 +86,10 @@ export interface AIntLit {
 export interface APrime {
   type: 'prime';
   inner: AExpr;
+}
+
+export interface ATimeQual {
+  type: 'time';
+  qual: 'always' | 'eventually';
+  pred: AExpr;
 }

@@ -1,4 +1,4 @@
-import { AlloyModel, AExpr, AIdentifier, APred, APropertyAccess, ASig, AOr, AClause, AAnd, AVar, AIntLit, APredCall, APrime } from "./ast";
+import { AlloyModel, AExpr, AIdentifier, APred, APropertyAccess, ASig, AOr, AAnd, AIntLit, APredCall, APrime, ATimeQual } from './ast';
 
 export function aModel(sigs: ASig[], preds: APred[]): AlloyModel {
   return {
@@ -24,8 +24,8 @@ export function aIntLit(value: number): AIntLit {
   return { type: 'intlit', value };
 }
 
-export function aPredCall(pred: string, args: AExpr[]): APredCall {
-  return { type: 'call', pred, args };
+export function aPredCall(pred: string, args?: AExpr[]): APredCall {
+  return { type: 'call', pred, args: args ?? [] };
 }
 
 export function aAccess(lhs: AExpr, prop: string): APropertyAccess {
@@ -69,22 +69,38 @@ export function visit(e: AExpr, trans: (e: AExpr) => AExpr): AExpr {
     case '=':
     case 'in':
     case '=>':
+    case '++':
+    case '->':
       return trans({ type: e.type, lhs: recurse(e.lhs), rhs: recurse(e.rhs) });
     case 'prime':
       return trans({ type: 'prime', inner: recurse(e.inner) });
+    case 'qual':
+      return trans({
+        type: e.type,
+        qual: e.qual,
+        set: e.set,
+        var: e.var,
+        pred: recurse(e.pred),
+      })
+    case 'time':
+      return trans({
+        type: e.type,
+        qual: e.qual,
+        pred: recurse(e.pred),
+      })
   }
 }
 
-/**
- * Prime all variable references inside the given expression
- */
-export function deepPrime(e: AExpr): AExpr {
-  return visit(e, (e) => {
-    switch (e.type) {
-      case 'ident':
-        return aPrime(aIdent(e.id));
-      default:
-        return e;
-    }
-  });
+export function aUpdateT(mapping: AExpr, lhs: AExpr, rhs: AExpr) {
+  return aBinop('=',
+    aPrime(mapping),
+    aBinop('++', mapping, aBinop('->', lhs, rhs)));
+}
+
+export function aTime(qual: ATimeQual['qual'], pred: AExpr): ATimeQual {
+  return {
+    type: 'time',
+    qual,
+    pred,
+  }
 }
