@@ -1,23 +1,35 @@
 import { FunctionTranslation } from '../translate-function';
-import { AExpr, AlloyModel } from './ast';
+import { isDefined, nonNull } from '../util';
+import { AExpr, AlloyModel, APred, ASig } from './ast';
 import { aAnd, aBinop, aIdent, aModel, aOr, aPredCall, aTime } from './ast-builder';
 
-export function combineFunctions(functions: FunctionTranslation[]): AlloyModel {
+export interface StateMachine {
+  initPred: APred,
+  stepPred?: APred,
+  atEndPred?: APred,
+}
+
+export function combineFunctions(functions: StateMachine[]): AlloyModel {
+
+  const inits = functions.map(f => f.initPred).filter(isDefined);
+  const steps = functions.map(f => f.stepPred).filter(isDefined);
+  const atEnds = functions.map(f => f.atEndPred).filter(isDefined);
+
   return aModel([], [
     {
       type: 'pred',
       name: 'init',
-      clauses: combineInitPreds(functions),
+      clauses: combineInitPreds(inits),
     },
     {
       type: 'pred',
       name: 'step',
-      clauses: combineStepPreds(functions),
+      clauses: combineStepPreds(steps),
     },
     {
       type: 'pred',
       name: 'allEnd',
-      clauses: combineEndPreds(functions),
+      clauses: combineEndPreds(atEnds),
     },
     {
       type: 'pred',
@@ -31,41 +43,49 @@ export function combineFunctions(functions: FunctionTranslation[]): AlloyModel {
   ]);
 }
 
-function combineInitPreds(functions: FunctionTranslation[]): AExpr[] {
-  return functions.map(fn => ({
+function combineInitPreds(preds: APred[]): AExpr[] {
+  return preds.map(fn => ({
     type: 'qual',
     qual: 'all',
     var: 'x',
-    set: fn.stateSig.name,
-    pred: aPredCall(fn.initPred.name, [aIdent('x')]),
+    set: predArgType(fn),
+    pred: aPredCall(fn.name, [aIdent('x')]),
   }));
 }
 
-function combineStepPreds(functions: FunctionTranslation[]): AExpr[] {
+function combineStepPreds(preds: APred[]): AExpr[] {
   return [
-    aOr(functions.map(fn => ({
+    aOr(preds.map(fn => ({
       type: 'qual',
       qual: 'some',
       var: 'x',
-      set: fn.stateSig.name,
-      pred: aPredCall(fn.stepPred.name, [aIdent('x')]),
+      set: predArgType(fn),
+      pred: aPredCall(fn.name, [aIdent('x')]),
     })))
   ];
 }
 
-function combineEndPreds(functions: FunctionTranslation[]): AExpr[] {
-  const allPredTypes = Array.from(new Set(functions.map(fn => fn.stateSig.name)));
+function combineEndPreds(preds: APred[]): AExpr[] {
+  const allPredTypes = Array.from(new Set(preds.map(fn => predArgType(fn))));
 
   return [{
     type: 'qual',
     qual: 'all',
     var: 'x',
     set: allPredTypes.join(' & '),
-    pred: aAnd(functions.map(fn =>
+    pred: aAnd(preds.map(fn =>
       aBinop('=>',
-        aBinop('in', aIdent('x'), aIdent(fn.stateSig.name)),
-        aPredCall(fn.atEndPred.name, [aIdent('x')]),
+        aBinop('in', aIdent('x'), aIdent(predArgType(fn))),
+        aPredCall(fn.name, [aIdent('x')]),
       ),
     )),
   }];
+}
+
+function predArgType(pred: APred) {
+  const p = pred.parameters?.[0][1];
+  if (!p) {
+    throw new Error(`Missing argument on predicate ${pred.name}`);
+  }
+  return p;
 }

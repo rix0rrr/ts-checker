@@ -1,10 +1,11 @@
-import { AlloyModel, AExpr, APred, ASig } from './alloy/ast';
-import { aBinop, aAccess, aIdent, aModel } from './alloy/ast-builder';
+import { AlloyModel, AExpr, APred, ASig, AObjectSig } from './alloy/ast';
+import { aBinop, aAccess, aIdent, aModel, aAddVars } from './alloy/ast-builder';
 import { requireInt, ucfirst } from './util';
 import { statementsToFlat } from './typescript-to-flat';
 import { Node, FunctionDeclaration, SyntaxKind } from 'ts-morph';
 import { flatToAlloy } from './flat-to-alloy';
 import { fLabels } from './flat/flatprogram';
+import { findVariables, makeScope, makeVariableSig, Scope } from './variables';
 
 export interface FunctionTranslation {
   model: AlloyModel;
@@ -15,7 +16,7 @@ export interface FunctionTranslation {
 }
 
 // FIXME: Global vars
-export function translateFunction(fn: FunctionDeclaration): FunctionTranslation {
+export function translateFunction(fn: FunctionDeclaration, parentScope: Scope): FunctionTranslation {
   const name = ucfirst(fn.getName() ?? 'xxx');
 
   const stateVarName = 'st';
@@ -26,37 +27,24 @@ export function translateFunction(fn: FunctionDeclaration): FunctionTranslation 
     variants: []
   };
 
-  // Just do statements for now
-  const stateSig: ASig = {
-    type: 'object',
-    name: `${name}Op`,
-    fields: {
-      pc: { name: 'pc', type: pcSig.name, var: true },
-    },
-  };
-
-  const initPred: APred = {
-    type: 'pred',
-    name: `${fn.getName()}_init`,
-    parameters: [ [stateVarName, stateSig.name] ],
-    clauses: [],
-  };
+  const stateSigName = `${name}Op`;
 
   const stateVar = aIdent(stateVarName);
   const pcVarName = 'pc';
 
   const variables = findVariables(fn);
 
-  Object.assign(stateSig.fields, Object.fromEntries(variables.map(v => [v.name, {
-    name: v.name,
-    type: v.type,
-    var: true,
-  }])));
-  const vars = variables.map(v => aIdent(v.name));
-  initPred.clauses.push(...variables.map(v => aBinop('=', aAccess(stateVar, v.name), v.initialValue)));
+  // Just do statements for now
+  const stateSig = makeVariableSig(stateSigName, variables);
+  stateSig.fields.pc = { name: 'pc', type: pcSig.name, var: true };
+
+  aAddVars(stateSig, variables);
+  const scope = makeScope(variables, stateVar, stateSigName, parentScope);
+
+  const initPred = makeInitPred(`${fn.getName()}_init`, scope);
 
   const flat = statementsToFlat(fn.getStatements());
-  const stepDisjunction = flatToAlloy(aIdent(pcVarName), flat, stateVar, vars);
+  const stepDisjunction = flatToAlloy(aIdent(pcVarName), flat, scope);
   initPred.clauses.push(aBinop('=', aAccess(stateVar, pcVarName), aIdent(flat.start)));
 
   const stepPred: APred = {
@@ -84,36 +72,13 @@ export function translateFunction(fn: FunctionDeclaration): FunctionTranslation 
   };
 }
 
-function findVariables(fn: FunctionDeclaration): Variable[] {
-  const ret: Variable[] = [];
+export function makeInitPred(name: string, scope: Scope): APred {
+  const stateVarName = 'st';
 
-  fn.forEachDescendant((node, trav) => {
-    if (Node.isVariableDeclaration(node)) {
-      const init = node.getInitializer();
-      if (!init) {
-        throw new Error('All variables must have initializers');
-      }
-      if (!init.getType().isNumberLiteral()) {
-        throw new Error(`The only supported type is numbers`);
-      }
-
-      ret.push({
-        name: node.getName(),
-        type: 'Int',
-        initialValue: {
-          type: 'intlit',
-          value: requireInt(init.asKindOrThrow(SyntaxKind.NumericLiteral).getLiteralValue()),
-        }
-      });
-    }
-  });
-
-  return ret;
+  return {
+    type: 'pred',
+    name,
+    parameters: [ [stateVarName, scope.stateType] ],
+    clauses: Object.values(scope.variables).map(v => aBinop('=', aAccess(aIdent(stateVarName), v.name), v.initialValue)),
+  };
 }
-
-interface Variable {
-  name: string;
-  type: string;
-  initialValue: AExpr;
-}
-

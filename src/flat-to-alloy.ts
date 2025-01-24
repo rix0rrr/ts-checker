@@ -3,8 +3,9 @@ import { aAccess, aAnd, aBinop, aIdent, aIntLit, aOr, aPredCall, aPrime, aUpdate
 import { FExpr, FStatement } from './flat/ast';
 import { FlatProgram } from './flat/flatprogram';
 import deepEqual from 'deep-equal';
+import { allVarsInScope, findVarScope, Scope } from './variables';
 
-export function flatToAlloy(pcVar: AIdentifier, p: FlatProgram, selfVar: AIdentifier, vars: AIdentifier[]) {
+export function flatToAlloy(pcVar: AIdentifier, p: FlatProgram, scope: Scope) {
   const transitions: AExpr[] = [];
   const chunks = Object.entries(p.chunks);
 
@@ -12,26 +13,26 @@ export function flatToAlloy(pcVar: AIdentifier, p: FlatProgram, selfVar: AIdenti
     const [label, chunk] = chunks[i];
     const sequentialLabel = chunks[i + 1]?.[0] ?? 'end';
 
-    const translation = translateFlat(chunk, selfVar);
+    const translation = translateFlat(chunk, scope);
 
     const nextLabel = translation.nextLabel ?? sequentialLabel;
 
     transitions.push(aAnd([
       // Precondition
-      aBinop('=', aAccess(selfVar, pcVar.id), aIdent(label)),
+      aBinop('=', aAccess(scope.stateVar, pcVar.id), aIdent(label)),
 
       // Effects
       ...translation.exprs ?? [],
-      aUpdateT(pcVar, selfVar, aIdent(nextLabel)),
+      aUpdateT(pcVar, scope.stateVar, aIdent(nextLabel)),
       // Unchanged variables
-      ...frame(vars, translation.exprs ?? []),
+      ...frame(scope, translation.exprs ?? []),
     ]));
   }
 
   // Or we can just stutter (not do anything at all)
   transitions.push(aAnd([
       aBinop('=', aPrime(pcVar), pcVar),
-      ...frame(vars, []),
+      ...frame(scope, []),
   ]));
 
   return aOr(transitions);
@@ -40,8 +41,8 @@ export function flatToAlloy(pcVar: AIdentifier, p: FlatProgram, selfVar: AIdenti
 /**
  * Return frame conditions for all variables that are unused in 'exprs'
  */
-export function frame(vars: AIdentifier[], exprs: AExpr[]) {
-  const unused = [...vars];
+export function frame(scope: Scope, exprs: AExpr[]) {
+  const unused = allVarsInScope(scope);
 
   for (const expr of exprs) {
     visit(expr, (e) => {
@@ -57,7 +58,7 @@ export function frame(vars: AIdentifier[], exprs: AExpr[]) {
   return unused.map(v => aBinop('=', aPrime(v), v));
 }
 
-function translateFlat(st: FStatement[], selfVar: AIdentifier): Translation {
+function translateFlat(st: FStatement[], scope: Scope): Translation {
   if (st.length !== 1) {
     throw new Error('Currently do not support clauses with multiple statements');
   }
@@ -66,9 +67,13 @@ function translateFlat(st: FStatement[], selfVar: AIdentifier): Translation {
 
   switch (fst.type) {
     case 'assign': {
+      if (fst.lhs.type !== 'ident') {
+        throw new Error('Can only assign to plain identifiers');
+      }
+      const vscope = findVarScope(scope, fst.lhs.id);
       return {
         exprs: [
-          aUpdateT(translateExpr(fst.lhs), selfVar, accessIdentifiersOn(translateExpr(fst.rhs), selfVar)),
+          aUpdateT(translateExpr(fst.lhs), vscope.stateVar, qualifyIdentifiers(translateExpr(fst.rhs), scope)),
         ],
       };
     }
@@ -100,11 +105,14 @@ interface Translation {
 
 /**
  * Turn all identifiers into accesses on an object
+ *
+ * Find the containing scope for this identifier and qualify it.
  */
-function accessIdentifiersOn(expr: AExpr, stateVar: AExpr) {
+function qualifyIdentifiers(expr: AExpr, scope: Scope) {
   return visit(expr, (e) => {
     if (e.type === 'ident') {
-      return aAccess(stateVar, e.id);
+      const vscope = findVarScope(scope, e.id);
+      return aAccess(vscope.stateVar, e.id);
     }
     return e;
   });

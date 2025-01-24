@@ -12,6 +12,9 @@ export function renderModel(x: AlloyModel, code: Code) {
 export function renderSig(x: ASig, code: Code) {
   switch (x.type) {
     case 'object':
+      if (x.one) {
+        code.emit('one ');
+      }
       code.beginBlock(`sig ${x.name}`);
       code.separate(() => `,${code.linebreak}`, Object.values(x.fields), f => {
         if (f.var) {

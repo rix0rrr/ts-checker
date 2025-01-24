@@ -1,4 +1,5 @@
-import { AlloyModel, AExpr, AIdentifier, APred, APropertyAccess, ASig, AOr, AAnd, AIntLit, APredCall, APrime, ATimeQual } from './ast';
+import { Variable } from '../variables';
+import { AlloyModel, AExpr, AIdentifier, APred, APropertyAccess, ASig, AOr, AAnd, AIntLit, APredCall, APrime, ATimeQual, AObjectSig } from './ast';
 
 export function aModel(sigs: ASig[], preds: APred[]): AlloyModel {
   return {
@@ -103,4 +104,12 @@ export function aTime(qual: ATimeQual['qual'], pred: AExpr): ATimeQual {
     qual,
     pred,
   }
+}
+
+export function aAddVars(obj: AObjectSig, vs: Variable[]) {
+  Object.assign(obj.fields, Object.fromEntries(vs.map(v => [v.name, {
+    name: v.name,
+    type: v.type,
+    var: true,
+  }])));
 }

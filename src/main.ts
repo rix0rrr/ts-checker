@@ -1,10 +1,11 @@
 import ts from 'typescript';
-import { DiagnosticCategory, Project } from "ts-morph";
-import { FunctionTranslation, translateFunction } from './translate-function';
+import { DiagnosticCategory, Project, SyntaxKind } from "ts-morph";
+import { makeInitPred, translateFunction } from './translate-function';
 import { renderModel } from './alloy/render';
 import { Code } from './code';
-import { aMergeModel, aModel } from './alloy/ast-builder';
-import { combineFunctions } from './alloy/combine-pred';
+import { aIdent, aMergeModel, aModel } from './alloy/ast-builder';
+import { combineFunctions, StateMachine } from './alloy/combine-pred';
+import { findVariables, makeScope, makeVariableSig } from './variables';
 
 async function main() {
   const args = process.argv.slice(2);
@@ -23,12 +24,26 @@ async function main() {
   }
 
   const model = aModel([], []);
-  const functions: FunctionTranslation[] = [];
+  const functions: StateMachine[] = [];
 
   for (const source of sourcesOfInterest) {
-    const fns = source.getChildrenOfKind(ts.SyntaxKind.FunctionDeclaration);
-    for (const fn of fns) {
-      const t = translateFunction(fn);
+    const globalVars = findVariables(source);
+    const globalScope = makeScope(globalVars, aIdent('Global'), 'Global');
+    if (globalVars.length > 0) {
+      const globalName = 'Global';
+      const globalInitName = 'global_init';
+
+      model.sigs[globalName] = makeVariableSig(globalName, globalVars);
+      model.sigs[globalName].one = true;
+      model.preds[globalInitName] = makeInitPred(globalInitName, globalScope);
+
+      functions.push({
+        initPred: model.preds[globalInitName] ,
+      });
+    }
+
+    for (const fn of source.getChildrenOfKind(SyntaxKind.FunctionDeclaration)) {
+      const t = translateFunction(fn, globalScope);
       aMergeModel(model, t.model);
       functions.push(t);
     }

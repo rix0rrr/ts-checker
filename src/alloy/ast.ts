@@ -19,6 +19,7 @@ export interface AObjectSig {
   type: 'object';
   name: string;
   fields: {[name: string]: AField};
+  one?: boolean;
 }
 
 export interface AEnumSig {

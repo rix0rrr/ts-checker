@@ -19,3 +19,7 @@ export function nonNull<A>(x: A): NonNullable<A> {
   }
   return x;
 }
+
+export function isDefined<A>(x: A): x is NonNullable<A> {
+  return x != null;
+}
