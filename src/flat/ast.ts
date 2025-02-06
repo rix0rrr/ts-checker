@@ -1,14 +1,22 @@
-export type FStatement = FAssignment | FGoto;
+export type FStatement = FAssignment | FGoto | FAssertion;
 
 export interface FAssignment {
   type: 'assign';
   lhs: FExpr;
   rhs: FExpr;
+  comment?: string;
+}
+
+export interface FAssertion {
+  type: 'assert';
+  assertion: FExpr;
+  comment?: string;
 }
 
 export interface FGoto {
   type: 'goto';
   label: string;
+  comment?: string;
 }
 
 export type FExpr = FBinop | FIdentifier | FIntLit;
@@ -19,7 +27,7 @@ export interface FIdentifier {
 }
 
 export interface FBinop {
-  type: 'eq' | 'plus';
+  type: 'assign' | 'plus' | 'eq';
   lhs: FExpr;
   rhs: FExpr;
 }

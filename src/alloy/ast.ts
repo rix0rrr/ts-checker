@@ -29,7 +29,7 @@ export interface AEnumSig {
 }
 
 export interface APred {
-  type: 'pred';
+  type: 'pred' | 'assert';
   name: string;
   /** [name, type] */
   parameters?: Array<[string, string]>;
@@ -44,7 +44,13 @@ export interface AUnivQual {
   pred: AExpr;
 }
 
-export type AExpr = ABinop | APropertyAccess | AIdentifier | APredCall | AOr | AAnd | AIntLit | APrime | AUnivQual | ATimeQual;
+export type AExpr = ABinop | APropertyAccess | AIdentifier | APredCall | AOr | AAnd | AIntLit | APrime | AUnivQual | ATimeQual | ACommented;
+
+export interface ACommented {
+  type: 'comment';
+  comment: string[];
+  expr: AExpr;
+}
 
 export interface ABinop {
   type: '=' | 'in' | '=>' | '++' | '->';

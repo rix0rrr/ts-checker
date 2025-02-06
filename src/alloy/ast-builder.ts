@@ -39,18 +39,35 @@ export function aBinop<A extends BinOps['type']>(type: A, lhs: AExpr, rhs: AExpr
   return { type, lhs, rhs } as any;
 }
 
-export function aOr(clauses: AExpr[]): AOr {
+export function aOr(clauses: AExpr[]): AExpr {
   if (clauses.length === 0) {
     throw new Error('Cannot have an empty or');
+  }
+  if (clauses.length === 1) {
+    return clauses[0];
   }
   return { type: 'or', clauses };
 }
 
-export function aAnd(clauses: AExpr[]): AAnd {
+export function aCommented(lines: string[], expr: AExpr): AExpr {
+  if (lines.length == 0) {
+    return expr;
+  }
+  return { type: 'comment', comment: lines, expr };
+}
+
+export function aAnd(clauses: AExpr[]): AExpr {
   if (clauses.length === 0) {
     throw new Error('Cannot have an empty and');
   }
+  if (clauses.length === 1) {
+    return clauses[0];
+  }
   return { type: 'and', clauses };
+}
+
+export function aImplies(cond: AExpr, conseq: AExpr): AExpr {
+  return aBinop('=>', cond, conseq);
 }
 
 export function visit(e: AExpr, trans: (e: AExpr) => AExpr): AExpr {
@@ -89,6 +106,12 @@ export function visit(e: AExpr, trans: (e: AExpr) => AExpr): AExpr {
         qual: e.qual,
         pred: recurse(e.pred),
       })
+    case 'comment':
+      return trans({
+        type: e.type,
+        comment: e.comment,
+        expr: recurse(e.expr),
+      });
   }
 }
 

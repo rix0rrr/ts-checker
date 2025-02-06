@@ -1,14 +1,21 @@
 import { AExpr, AIdentifier } from './alloy/ast';
-import { aAccess, aAnd, aBinop, aIdent, aIntLit, aOr, aPredCall, aPrime, aUpdateT, visit } from './alloy/ast-builder';
+import { aAccess, aAnd, aBinop, aCommented, aIdent, aImplies, aIntLit, aPredCall, aPrime, aUpdateT, visit } from './alloy/ast-builder';
 import { FExpr, FStatement } from './flat/ast';
 import { FlatProgram } from './flat/flatprogram';
 import deepEqual from 'deep-equal';
 import { allVarsInScope, findVarScope, Scope } from './variables';
+import { isDefined } from './util';
 
-export function flatToAlloy(pcVar: AIdentifier, p: FlatProgram, scope: Scope) {
+export interface FlatToAlloyResult {
+  transitions: AExpr[];
+  assertions: AExpr[];
+}
+
+export function flatToAlloy(pcVar: AIdentifier, p: FlatProgram, scope: Scope): FlatToAlloyResult {
   const transitions: AExpr[] = [];
-  const chunks = Object.entries(p.chunks);
+  const assertions: AExpr[] = [];
 
+  const chunks = Object.entries(p.chunks);
   for (let i = 0; i < chunks.length; i++) {
     const [label, chunk] = chunks[i];
     const sequentialLabel = chunks[i + 1]?.[0] ?? 'end';
@@ -17,16 +24,24 @@ export function flatToAlloy(pcVar: AIdentifier, p: FlatProgram, scope: Scope) {
 
     const nextLabel = translation.nextLabel ?? sequentialLabel;
 
-    transitions.push(aAnd([
-      // Precondition
-      aBinop('=', aAccess(scope.stateVar, pcVar.id), aIdent(label)),
+    if (translation.transitions) {
+      transitions.push(aCommented(translation.comments, aAnd([
+        // Precondition
+        aBinop('=', aAccess(scope.stateVar, pcVar.id), aIdent(label)),
 
-      // Effects
-      ...translation.exprs ?? [],
-      aUpdateT(pcVar, scope.stateVar, aIdent(nextLabel)),
-      // Unchanged variables
-      ...frame(scope, translation.exprs ?? []),
-    ]));
+        // Effects
+        ...translation.transitions ?? [],
+        aUpdateT(pcVar, scope.stateVar, aIdent(nextLabel)),
+        // Unchanged variables
+        ...frame(scope, translation.transitions ?? []),
+      ])));
+    }
+    if (translation.checks) {
+      assertions.push(aCommented(translation.comments, aImplies(
+        aBinop('=', aAccess(scope.stateVar, pcVar.id), aIdent(label)),
+        aAnd(translation.checks),
+      )));
+    }
   }
 
   // Or we can just stutter (not do anything at all)
@@ -35,7 +50,10 @@ export function flatToAlloy(pcVar: AIdentifier, p: FlatProgram, scope: Scope) {
       ...frame(scope, []),
   ]));
 
-  return aOr(transitions);
+  return {
+    transitions,
+    assertions,
+  };
 }
 
 /**
@@ -64,6 +82,7 @@ function translateFlat(st: FStatement[], scope: Scope): Translation {
   }
 
   const fst = st[0];
+  const comments = st.map(s => s.comment).filter(isDefined);
 
   switch (fst.type) {
     case 'assign': {
@@ -72,21 +91,32 @@ function translateFlat(st: FStatement[], scope: Scope): Translation {
       }
       const vscope = findVarScope(scope, fst.lhs.id);
       return {
-        exprs: [
+        transitions: [
           aUpdateT(translateExpr(fst.lhs), vscope.stateVar, qualifyIdentifiers(translateExpr(fst.rhs), scope)),
         ],
+        comments,
       };
     }
+
+    case 'assert':
+      return {
+        transitions: [],
+        checks: [qualifyIdentifiers(translateExpr(fst.assertion), scope)],
+        comments,
+      };
 
     case 'goto':
       return {
         nextLabel: fst.label,
+        comments,
       };
   }
 }
 
 function translateExpr(e: FExpr): AExpr {
   switch (e.type) {
+    case 'assign':
+      return aBinop('=', translateExpr(e.lhs), translateExpr(e.rhs));
     case 'eq':
       return aBinop('=', translateExpr(e.lhs), translateExpr(e.rhs));
     case 'ident':
@@ -99,8 +129,10 @@ function translateExpr(e: FExpr): AExpr {
 }
 
 interface Translation {
-  exprs?: AExpr[];
+  transitions?: AExpr[];
+  checks?: AExpr[];
   nextLabel?: string;
+  comments: string[];
 }
 
 /**

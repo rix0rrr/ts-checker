@@ -2,9 +2,8 @@ import { FlatProgram, FlatProgramBuilder } from './flat/flatprogram';
 import { FBinop, FExpr } from './flat/ast';
 import { Expression, Node, Statement, SyntaxKind } from 'ts-morph';
 import { requireInt } from './util';
-import { AExpr } from './alloy/ast';
 
-export function statementsToFlat(xs: Statement[]): FlatProgram {
+export function typescriptToFlat(xs: Statement[]): FlatProgram {
   const ret = new FlatProgramBuilder();
 
   for (const x of xs) {
@@ -20,22 +19,55 @@ function translateStatement(x: Statement, p: FlatProgramBuilder) {
     return;
   }
 
-  if (Node.isExpressionStatement(x) && Node.isAwaitExpression(x.getExpression())) {
-    // Await
-    p.newChunk();
-    return;
-  }
+  if (Node.isExpressionStatement(x)) {
+    const expr = x.getExpression();
+    if (Node.isAwaitExpression(expr)) {
+      // Await
+      p.newChunk();
+      return;
+    }
 
-  if (Node.isExpressionStatement(x) && x.getExpression().asKind(SyntaxKind.BinaryExpression)?.getOperatorToken()?.getText() === '=') {
-    // Assignment
-    const binOp = x.getExpression().asKindOrThrow(SyntaxKind.BinaryExpression);
+    const callExpr = expr.asKind(SyntaxKind.CallExpression);
+    if (callExpr) {
+      const ident = callExpr.getExpression().asKind(SyntaxKind.Identifier);
+      if (!ident) {
+        throw new Error(`Only plain functions can be called: ${callExpr.print()}`);
+      }
 
-    p.append({
-      type: 'assign',
-      lhs: translateExpressionToFlat(binOp.getLeft()),
-      rhs: translateExpressionToFlat(binOp.getRight()),
-    });
-    return;
+      if (ident.getText() === 'assert') {
+        if (callExpr.getArguments().length !== 1) {
+          throw new Error(`assert takes 1 argument: ${callExpr.print()}`);
+        }
+
+        const arg = callExpr.getArguments()[0];
+        if (!Node.isExpression(arg)) {
+          // This can't really fail but we have to type check it
+          throw new Error(`Argument must be expression`);
+        }
+
+        p.append({
+          type: 'assert',
+          assertion: translateExpressionToFlat(arg),
+          comment: x.print(),
+        });
+        return;
+      }
+
+      throw new Error(`Unrecognized function called: ${ident.print()}`);
+    }
+
+    if (expr.asKind(SyntaxKind.BinaryExpression)?.getOperatorToken()?.getText() === '=') {
+      // Assignment
+      const binOp = expr.asKindOrThrow(SyntaxKind.BinaryExpression);
+
+      p.append({
+        type: 'assign',
+        lhs: translateExpressionToFlat(binOp.getLeft()),
+        rhs: translateExpressionToFlat(binOp.getRight()),
+        comment: x.print(),
+      });
+      return;
+    }
   }
 
   throw new Error(`Can't handle this statement yet: ${x.print()}`);
@@ -62,7 +94,9 @@ function translateExpressionToFlat(x: Expression): FExpr {
   if (binExpr) {
     const typeMap: Array<[SyntaxKind, FBinop['type']]> = [
       [SyntaxKind.PlusToken, 'plus'],
-      [SyntaxKind.EqualsToken, 'eq'],
+      [SyntaxKind.EqualsToken, 'assign'],
+      [SyntaxKind.EqualsEqualsToken, 'eq'],
+      [SyntaxKind.EqualsEqualsEqualsToken, 'eq'],
     ];
 
     for (const [syntax, type] of typeMap) {

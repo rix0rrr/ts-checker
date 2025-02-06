@@ -1,8 +1,8 @@
-import { AlloyModel, AExpr, APred, ASig, AObjectSig } from './alloy/ast';
-import { aBinop, aAccess, aIdent, aModel, aAddVars } from './alloy/ast-builder';
-import { requireInt, ucfirst } from './util';
-import { statementsToFlat } from './typescript-to-flat';
-import { Node, FunctionDeclaration, SyntaxKind } from 'ts-morph';
+import { AlloyModel, APred, ASig } from './alloy/ast';
+import { aBinop, aAccess, aIdent, aModel, aAddVars, aOr } from './alloy/ast-builder';
+import { ucfirst } from './util';
+import { typescriptToFlat } from './typescript-to-flat';
+import { FunctionDeclaration } from 'ts-morph';
 import { flatToAlloy } from './flat-to-alloy';
 import { fLabels } from './flat/flatprogram';
 import { findVariables, makeScope, makeVariableSig, Scope } from './variables';
@@ -13,6 +13,7 @@ export interface FunctionTranslation {
   initPred: APred,
   stepPred: APred,
   atEndPred: APred,
+  assertPred?: APred,
 }
 
 // FIXME: Global vars
@@ -43,16 +44,26 @@ export function translateFunction(fn: FunctionDeclaration, parentScope: Scope): 
 
   const initPred = makeInitPred(`${fn.getName()}_init`, scope);
 
-  const flat = statementsToFlat(fn.getStatements());
-  const stepDisjunction = flatToAlloy(aIdent(pcVarName), flat, scope);
+  const flat = typescriptToFlat(fn.getStatements());
+  const alloyClauses = flatToAlloy(aIdent(pcVarName), flat, scope);
   initPred.clauses.push(aBinop('=', aAccess(stateVar, pcVarName), aIdent(flat.start)));
 
   const stepPred: APred = {
     type: 'pred',
     name: `${fn.getName()}_step`,
     parameters: [[stateVarName, stateSig.name]],
-    clauses: [stepDisjunction],
+    clauses: [aOr(alloyClauses.transitions)],
   };
+
+  let assertPred: APred | undefined;
+  if (alloyClauses.assertions.length > 0) {
+    assertPred = {
+      type: 'pred',
+      name: `${fn.getName()}_assert`,
+      parameters: [[stateVarName, stateSig.name]],
+      clauses: alloyClauses.assertions,
+    };
+  }
 
   pcSig.variants.push(...fLabels(flat), 'end');
 
@@ -64,11 +75,12 @@ export function translateFunction(fn: FunctionDeclaration, parentScope: Scope): 
   };
 
   return {
-    model: aModel([stateSig, pcSig], [initPred, stepPred, atEndPred]),
+    model: aModel([stateSig, pcSig], [initPred, stepPred, atEndPred, ...assertPred ? [assertPred] : []]),
     initPred,
     stepPred,
     stateSig,
     atEndPred,
+    assertPred,
   };
 }
 

@@ -1,4 +1,3 @@
-import ts from 'typescript';
 import { DiagnosticCategory, Project, SyntaxKind } from "ts-morph";
 import { makeInitPred, translateFunction } from './translate-function';
 import { renderModel } from './alloy/render';
@@ -12,7 +11,7 @@ async function main() {
 
   const project = new Project();
   const sourcesOfInterest = project.addSourceFilesAtPaths(args);
-  project.addSourceFilesAtPaths('types.d.ts');
+  project.addSourceFilesAtPaths(`${__dirname}/../library/types.d.ts`);
   project.resolveSourceFileDependencies();
 
   const diagnostics = project.getPreEmitDiagnostics();

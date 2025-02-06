@@ -1,7 +1,7 @@
-import { FunctionDeclaration, Node, SyntaxKind } from "ts-morph";
+import { Node, SyntaxKind } from "ts-morph";
 import { requireInt } from "./util";
 import { AExpr, AObjectSig } from "./alloy/ast";
-import { aAccess, aAddVars, aIdent } from "./alloy/ast-builder";
+import { aAddVars, aIdent } from "./alloy/ast-builder";
 
 export function findVariables(root: Node): Variable[] {
   const ret: Variable[] = [];

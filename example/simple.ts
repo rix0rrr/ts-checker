@@ -8,4 +8,6 @@ async function simple() {
   z = z + x;
   await 0;
   x = x + 1;
+  await 0;
+  assert(z == 1);
 }

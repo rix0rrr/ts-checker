@@ -34,7 +34,7 @@ export function renderSig(x: ASig, code: Code) {
 }
 
 export function emitPred(x: APred, code: Code) {
-  code.emit(`pred ${x.name}`);
+  code.emit(`${x.type} ${x.name}`);
   if (x.parameters && x.parameters.length > 0) {
     code.emit('[');
     code.separate(() => ', ', x.parameters, ([name, type]) => {
@@ -114,6 +114,13 @@ export function emitExpr(x: AExpr, code: Code): void {
     case 'time':
       code.emit(`${x.qual} `);
       emitExpr(x.pred, code);
+      break;
+
+    case 'comment':
+      code.separate(() => code.linebreak, x.comment, (c) => {
+        code.emit(`/* ${c} */`);
+      });
+      emitExpr(x.expr, code);
       break;
 
     default:

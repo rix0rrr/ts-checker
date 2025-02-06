@@ -1,25 +1,25 @@
-import { FunctionTranslation } from '../translate-function';
-import { isDefined, nonNull } from '../util';
-import { AExpr, AlloyModel, APred, ASig } from './ast';
-import { aAnd, aBinop, aIdent, aModel, aOr, aPredCall, aTime } from './ast-builder';
+import { isDefined } from '../util';
+import { AExpr, AlloyModel, APred } from './ast';
+import { aAnd, aBinop, aIdent, aImplies, aModel, aOr, aPredCall, aTime } from './ast-builder';
 
 export interface StateMachine {
   initPred: APred,
   stepPred?: APred,
   atEndPred?: APred,
+  assertPred?: APred;
 }
 
 export function combineFunctions(functions: StateMachine[]): AlloyModel {
-
   const inits = functions.map(f => f.initPred).filter(isDefined);
   const steps = functions.map(f => f.stepPred).filter(isDefined);
   const atEnds = functions.map(f => f.atEndPred).filter(isDefined);
+  const assertions = functions.map(f => f.assertPred).filter(isDefined);
 
   return aModel([], [
     {
       type: 'pred',
       name: 'init',
-      clauses: combineInitPreds(inits),
+      clauses: combinePreds(inits),
     },
     {
       type: 'pred',
@@ -33,6 +33,11 @@ export function combineFunctions(functions: StateMachine[]): AlloyModel {
     },
     {
       type: 'pred',
+      name: 'satisfyAssertions',
+      clauses: combinePreds(assertions),
+    },
+    {
+      type: 'pred',
       name: 'completeRun',
       clauses: [
         aPredCall('init'),
@@ -40,10 +45,20 @@ export function combineFunctions(functions: StateMachine[]): AlloyModel {
         aTime('eventually', aPredCall('allEnd')),
       ],
     },
+    {
+      type: 'assert',
+      name: 'runSatisfiesAssertions',
+      clauses: [
+        aImplies(aAnd([
+          aPredCall('init'),
+          aTime('always', aPredCall('step')),
+        ]), aTime('always', aPredCall('satisfyAssertions'))),
+      ],
+    },
   ]);
 }
 
-function combineInitPreds(preds: APred[]): AExpr[] {
+function combinePreds(preds: APred[]): AExpr[] {
   return preds.map(fn => ({
     type: 'qual',
     qual: 'all',
